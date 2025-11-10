@@ -8,35 +8,6 @@ A **React Native** app built with **Expo** and **expo-router**, targeting **Andr
 
 ---
 
-## 📘 Table of Contents
-
-1. [Overview](#overview)
-2. [Tech Stack](#tech-stack)
-3. [Requirements](#requirements)
-    - [Windows](#windows)
-    - [macOS](#macos)
-4. [First-Time Setup](#first-time-setup)
-    - [Clone the Repo](#clone-the-repo)
-    - [Install Dependencies](#install-dependencies)
-    - [Add Firebase Config](#add-firebase-config)
-    - [Install Dev Client (First Native Build)](#install-dev-client-first-native-build)
-    - [Start the App](#start-the-app)
-5. [Everyday Development](#everyday-development)
-6. [Troubleshooting](#troubleshooting)
-7. [Git Hygiene (No Secrets)](#git-hygiene-no-secrets)
-8. [Project Structure](#project-structure)
-9. [FAQ](#faq)
-10. [Quick Start (Copy/Paste)](#quick-start-copypaste)
-
----
-
-## 🧩 Overview
-
-This app allows users to sign in via **Firebase Email/Password** and browse laundry-related screens (buildings, machines, etc.) using **expo-router** for navigation.  
-It uses the **Expo Development Client** for a smooth native + JS workflow.
-
----
-
 ## ⚙️ Tech Stack
 
 - **React Native** via **Expo**
@@ -47,6 +18,11 @@ It uses the **Expo Development Client** for a smooth native + JS workflow.
 
 ---
 
+## DISCLAIMER
+
+These steps are NOT currently enough to get this project running. Do to the nature of the program stack used, this project requires extensive, device-specific setup. Please reach out to either System 32 or Victorstone on discord to get the project up and running on your machine.
+
+---
 ## 💻 Requirements
 
 > You only need **Android Studio installed** to start. Follow OS-specific setup steps below.
