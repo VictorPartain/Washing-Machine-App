@@ -1,5 +1,6 @@
 ﻿import { initializeApp, getApps } from "firebase/app";
 import { getAuth, initializeAuth, browserLocalPersistence } from "firebase/auth";
+import {getFirestore,} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAkBaaWDF01d6OelR7P_HzT8nu1i8whxDs",
@@ -15,5 +16,9 @@ const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 let auth;
 try { auth = initializeAuth(app, { persistence: browserLocalPersistence }); }
 catch { auth = getAuth(app); }
+
+// New Instance of Firestore
+const db = getFirestore(app);
+
 
 export { app, auth };
