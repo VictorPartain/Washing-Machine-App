@@ -80,6 +80,8 @@ interface ReportModalProps {
 }
 
 export default function Machines() {
+    console.log("buildingId:", buildingId);
+
   const { buildingId } = useLocalSearchParams<{ buildingId: string }>();
 
   const [machinesRaw, setMachinesRaw] = useState<MachineDoc[]>([]);
@@ -190,7 +192,7 @@ export default function Machines() {
         "laundryRooms",
         buildingId as string,
         "machines",
-        String(machine.id)
+        Machine ${machine.id}
       );
 
       try {
@@ -218,13 +220,13 @@ export default function Machines() {
   const handleFix = async (machine: Machine) => {
     if (!isAdmin || !buildingId) return;
 
-    const machineRef = doc(
-      db,
-      "laundryRooms",
-      buildingId as string,
-      "machines",
-      String(machine.id)
-    );
+   const machineRef = doc(
+     db,
+     "laundryRooms",
+     buildingId as string,
+     "machines",
+     Machine ${machine.id}
+   );
 
     try {
       await updateDoc(machineRef, {
@@ -248,7 +250,7 @@ export default function Machines() {
       "laundryRooms",
       buildingId as string,
       "machines",
-      String(machine.id)
+      Machine ${machine.id}
     );
 
     try {
