@@ -192,7 +192,7 @@ export default function Machines() {
         "laundryRooms",
         buildingId as string,
         "machines",
-        Machine ${machine.id}
+        `Machine ${machine.id}`
       );
 
       try {
@@ -225,7 +225,7 @@ export default function Machines() {
      "laundryRooms",
      buildingId as string,
      "machines",
-     Machine ${machine.id}
+     `Machine ${machine.id}`
    );
 
     try {
@@ -250,7 +250,7 @@ export default function Machines() {
       "laundryRooms",
       buildingId as string,
       "machines",
-      Machine ${machine.id}
+      `Machine ${machine.id}`
     );
 
     try {
