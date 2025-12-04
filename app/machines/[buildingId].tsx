@@ -1,484 +1,554 @@
-// app/machines/[buildingID].tsx
+// app/machines/[buildingId].tsx
 
-// In expo-router, files defined in brackets (e.g., [buildingID]) are dynamic route segments, meaning they can handle variable values in the URL path.
-
-// Import necessary components and functions
 import { useLocalSearchParams } from "expo-router";
-import React, { useState } from 'react';
-import { Alert, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-// Helper functions
-const STATUS_CONFIG: Record<MachineStatus, { text: string; color: string }> = {
-    available: { text: 'Available', color: '#10B981' },
-    'in-use': { text: 'In Use', color: '#EF4444' },  // Must use quotes for keys with hyphens
-    finishing: { text: 'Finishing Soon', color: '#F59E0B' },
-    broken: { text: 'Out of Order', color: '#6B7280' },
-};
-const formatTime = (seconds: number): string => {
-    if (seconds <= 0) return '00:00';  // No time left
-    const m = Math.floor(seconds / 60);  // Minutes
-    const s = seconds % 60;  // Seconds
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;  // Format as MM:SS
-};
-
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+  Timestamp,
+} from "firebase/firestore";
+import { auth, db } from "../../src/firebase";
 
 // Possible machine statuses
-type MachineStatus = 'available' | 'in-use' | 'finishing' | 'broken';
+type MachineStatus = "available" | "in-use" | "broken";
 
-// Structure for machine data
-interface Machine {
-    id: number;
-    type: 'washer' | 'dryer';
-    status: MachineStatus;
-    timer: number;
+interface MachineDoc {
+  id: number;
+  type: "washer" | "dryer";
+  status: MachineStatus;
+  broken: boolean;
+  reportMessage?: string | null;
+  startTime?: Timestamp | null;
+  duration?: number; // seconds
 }
 
-// Structure for laundry room data
-interface LaundryRoom {
-    id: string;
-    name: string;
-    // List of machines in the room
-    machines: Machine[];
+interface Machine extends MachineDoc {
+  // Derived fields for UI
+  timer: number;            // seconds left
+  displayStatus: DisplayStatus;
 }
 
-// Structure for machine card props
+type DisplayStatus = "available" | "in-use" | "finishing" | "broken";
+
+const STATUS_CONFIG: Record<
+  DisplayStatus,
+  { text: string; color: string }
+> = {
+  available: { text: "Available", color: "#10B981" },
+  "in-use": { text: "In Use", color: "#EF4444" },
+  finishing: { text: "Finishing Soon", color: "#F59E0B" },
+  broken: { text: "Out of Order", color: "#6B7280" },
+};
+
+const formatTime = (seconds: number): string => {
+  if (seconds <= 0) return "00:00";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m.toString().padStart(2, "0")}:${s
+    .toString()
+    .padStart(2, "0")}`;
+};
+
 interface MachineCardProps {
-    machine: Machine;   // Which machine is selected
-    onAction: (machine: Machine) => void;  // When the user interacts with the machine
+  machine: Machine;
+  onAction: (machine: Machine) => void;
+  onFix: (machine: Machine) => void;
+  isAdmin: boolean;
 }
 
-// Struct for the report modoal props
 interface ReportModalProps {
-    visible: boolean;
-    onClose: () => void;  // Close the modal
-    onSubmit: (machine: Machine, message: string) => void;  // Callback when submitting a report
-    machine: Machine | null;  // The machine being reported
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (machine: Machine, message: string) => void;
+  machine: Machine | null;
 }
 
-
-// Define the Machines component
 export default function Machines() {
-    // Retrieve the buildingId from the route parameters (which building was selected)
-    const { buildingId } = useLocalSearchParams<{ buildingId: string }>();
+    console.log("buildingId:", buildingId);
 
-    // Define state variables for laundry data, modal visibility, and selected machine, as well as their setter functions
-    const [laundryData, setLaundryData] = useState(INITIAL_DATA);
-    const [isModalVisible, setModalVisible] = useState(false);
-    const [selectedMachine, setSelectedMachine] = useState<Machine | null>(null);
+  const { buildingId } = useLocalSearchParams<{ buildingId: string }>();
 
-    // Find the selected room based on the buildingId from the route parameters
-    const selectedRoom = laundryData.laundryRooms.find(r => r.id === buildingId);
+  const [machinesRaw, setMachinesRaw] = useState<MachineDoc[]>([]);
+  const [isModalVisible, setModalVisible] = useState(false);
+  const [selectedMachine, setSelectedMachine] = useState<Machine | null>(
+    null
+  );
 
-    // Simulate machine timers counting down every second
-    React.useEffect(() => {
-        const interval = setInterval(() => {
-            setLaundryData(prev => ({
-                // Update previous data for all machines in the selected building
-                laundryRooms: prev.laundryRooms.map(room => room.id === buildingId ? {
-                    ...room, machines: room.machines.map(machine => {
-                        // If the machine is running, decrement its timer
-                        if ((machine.status === "in-use" || machine.status === "finishing") && machine.timer > 0) {
-                            const newTimer = machine.timer - 1;
-                            let newStatus: MachineStatus = machine.status;
+  const [now, setNow] = useState(Date.now());
 
-                            // Change status when less than 5 min left (300 seconds)
-                            if (newTimer <= 300 && newTimer > 0) newStatus = "finishing";
-                            if (newTimer <= 0) return { ...machine, status: "available", timer: 0 };
+  // Tick every second to recompute timers locally
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
-                            // Return updated machine with new timer and status
-                            return { ...machine, timer: newTimer, status: newStatus };
-                        }
-                        return machine;
-                    }),
-                } : room),
-            }));
-        }, 1000);  // Interval of 1 second (1000 milliseconds)
+  // Subscribe to Firestore machines in this building
+  useEffect(() => {
+    if (!buildingId) return;
 
-        // Cleanup interval on component unmount or buildingId change
-        return () => clearInterval(interval);
-    }, [buildingId]);
- 
-    // Simulate when a user selects a machine to start or report
-    const handleAction = (machine: Machine) => {
-        if (machine.status === "available") {
-            // Set the time for washing or drying cycle (30 or 45 minutes)
-            const cycleTime = machine.type === "washer" ? 1800 : 2700;
-            // Update the machine status to "in-use" and set the timer
-            updateMachine(machine.id, { status: "in-use", timer: cycleTime });
-        }
-        else {
-            // Open the report modal for non-available machines
-            setSelectedMachine(machine);
-            setModalVisible(true);
-        }
-    };
-
-    // Update a machine's status and timer
-    const updateMachine = (machineId: number, patch: Partial<Machine>) => {
-        setLaundryData(prev => ({
-            laundryRooms: prev.laundryRooms.map(room => room.id === buildingId ? {
-                ...room, machines: room.machines.map(m => m.id === machineId ? { ...m, ...patch } : m),
-            } : room),
-        }));
-    };
-
-    // Report modal submit handler
-    const handleReportSubmit = async (machine: Machine, message: string) => {
-        console.log(`Reporting machine #${machine.id}: ${message}`);
-
-        // Update machine status to broken
-        updateMachine(machine.id, { status: "broken", timer: 0 });
-
-        // Log the report (could be sent to a server in a real app)
-        const time = new Date().toLocaleString();
-        const reportData = {
-            machineId: machine.id,
-            machineType: machine.type,
-            message: message,
-            timestamp: time,
-        };
-
-        // For demonstration, we just log it to the console
-        // This will later be sent to the firebase backend for storage
-        console.log("Report submitted:", reportData);
-
-        // Show success message
-        Alert.alert(
-            "Report Submitted",
-            `Issue reported for ${machine.type} #${machine.id}. Thank you for your feedback!`
-        );
-
-        // Close the modal
-        setModalVisible(false);
-        setSelectedMachine(null);
-    };
-
-    // Render the machines screen
-    return (
-        <SafeAreaView 
-            style={styles.container} 
-            edges={['top', 'left', 'right', 'bottom']}
-        >
-            <StatusBar 
-                barStyle="light-content" 
-            />
-            <Text 
-                // Display the name of the selected laundry room
-                style={{ color: '#FFF', fontSize: 22, fontWeight: '600', padding: 16, }}
-            >
-                {selectedRoom?.name}
-            </Text>
-            <ScrollView 
-                contentContainerStyle={styles.machinesGrid}
-            >
-                {selectedRoom?.machines.map(m => (
-                    <MachineCard key={m.id} machine={m} onAction={handleAction} />
-                ))}
-            </ScrollView>
-            <ReportModal
-                visible={isModalVisible}
-                onClose={() => setModalVisible(false)}
-                onSubmit={handleReportSubmit}
-                machine={selectedMachine}
-            />
-        </SafeAreaView>
+    const q = query(
+      collection(db, "laundryRooms", buildingId as string, "machines"),
+      orderBy("id", "asc")
     );
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const docs: MachineDoc[] = snapshot.docs.map((d) => {
+          const data = d.data() as any;
+          return {
+            id: data.id,
+            type: data.type,
+            status: data.status,
+            broken: data.broken ?? false,
+            reportMessage: data.reportMessage ?? null,
+            startTime: data.startTime ?? null,
+            duration: data.duration ?? 0,
+          };
+        });
+        setMachinesRaw(docs);
+      },
+      (err) => {
+        console.error("Error listening to machines:", err);
+        Alert.alert("Error", "Failed to load machines.");
+      }
+    );
+
+    return () => unsub();
+  }, [buildingId]);
+
+  // Compute timers and displayStatus from Firestore data + now
+  const machines: Machine[] = useMemo(() => {
+    return machinesRaw.map((m) => {
+      let timer = 0;
+      let displayStatus: DisplayStatus = "available";
+
+      if (m.broken) {
+        displayStatus = "broken";
+        timer = 0;
+      } else if (m.status === "in-use" && m.startTime && m.duration) {
+        const startedAt = m.startTime.toMillis();
+        const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
+        const remaining = Math.max(0, Math.floor(m.duration - elapsed));
+        timer = remaining;
+
+        if (remaining <= 0) {
+          displayStatus = "available";
+        } else if (remaining <= 300) {
+          displayStatus = "finishing";
+        } else {
+          displayStatus = "in-use";
+        }
+      } else {
+        displayStatus = "available";
+        timer = 0;
+      }
+
+      return {
+        ...m,
+        timer,
+        displayStatus,
+      };
+    });
+  }, [machinesRaw, now]);
+
+  const isAdmin = auth.currentUser?.email === "admin@sdsu.edu";
+
+  const handleAction = async (machine: Machine) => {
+    if (!buildingId) return;
+
+    // If broken, never allow normal "start"
+    if (machine.broken || machine.displayStatus === "broken") {
+      // Non-admin: open report modal again (or just show message)
+      setSelectedMachine(machine);
+      setModalVisible(true);
+      return;
+    }
+
+    if (machine.displayStatus === "available") {
+      // Start cycle
+      const cycleTime =
+        machine.type === "washer" ? 30 * 60 : 45 * 60; // seconds
+      const machineRef = doc(
+        db,
+        "laundryRooms",
+        buildingId as string,
+        "machines",
+        `Machine ${machine.id}`
+      );
+
+      try {
+        await updateDoc(machineRef, {
+          status: "in-use",
+          broken: false,
+          reportMessage: null,
+          startTime: Timestamp.now(),
+          duration: cycleTime,
+        });
+      } catch (err: any) {
+        console.error(err);
+        Alert.alert(
+          "Error",
+          err?.message ?? "Failed to start this machine."
+        );
+      }
+    } else {
+      // in-use or finishing → open report modal
+      setSelectedMachine(machine);
+      setModalVisible(true);
+    }
+  };
+
+  const handleFix = async (machine: Machine) => {
+    if (!isAdmin || !buildingId) return;
+
+   const machineRef = doc(
+     db,
+     "laundryRooms",
+     buildingId as string,
+     "machines",
+     `Machine ${machine.id}`
+   );
+
+    try {
+      await updateDoc(machineRef, {
+        broken: false,
+        reportMessage: null,
+        status: "available",
+        startTime: null,
+        duration: 0,
+      });
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert("Error", err?.message ?? "Failed to fix machine.");
+    }
+  };
+
+  const handleReportSubmit = async (machine: Machine, message: string) => {
+    if (!buildingId) return;
+
+    const machineRef = doc(
+      db,
+      "laundryRooms",
+      buildingId as string,
+      "machines",
+      `Machine ${machine.id}`
+    );
+
+    try {
+      await updateDoc(machineRef, {
+        broken: true,
+        status: "broken",
+        reportMessage: message || "No description provided.",
+        startTime: null,
+        duration: 0,
+      });
+
+      Alert.alert(
+        "Report Submitted",
+        `Issue reported for ${machine.type} #${machine.id}. Thank you!`
+      );
+    } catch (err: any) {
+      console.error(err);
+      Alert.alert(
+        "Error",
+        err?.message ?? "Failed to submit the report."
+      );
+    } finally {
+      setModalVisible(false);
+      setSelectedMachine(null);
+    }
+  };
+
+  const selectedRoomName = buildingId; // or you could also store room metadata in Firestore
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top", "left", "right", "bottom"]}>
+      <StatusBar barStyle="light-content" />
+      <Text
+        style={{
+          color: "#FFF",
+          fontSize: 22,
+          fontWeight: "600",
+          padding: 16,
+        }}
+      >
+        {selectedRoomName}
+      </Text>
+      <ScrollView contentContainerStyle={styles.machinesGrid}>
+        {machines.map((m) => (
+          <MachineCard
+            key={m.id}
+            machine={m}
+            onAction={handleAction}
+            onFix={handleFix}
+            isAdmin={isAdmin}
+          />
+        ))}
+      </ScrollView>
+      <ReportModal
+        visible={isModalVisible}
+        onClose={() => setModalVisible(false)}
+        onSubmit={handleReportSubmit}
+        machine={selectedMachine}
+      />
+    </SafeAreaView>
+  );
 }
 
-/*
-    CODE BELOW WILL BE REPLACED WITH FIREBASE AUTHENTICATION
-*/
-// Mock initial data for laundry rooms and machines
-const INITIAL_DATA: { laundryRooms: LaundryRoom[] } = {
-    laundryRooms: [{
-        id: 'ChapultepecHall',
-        name: 'Chapultepec Hall',
-        machines: [
-            { id: 1, type: 'washer', status: 'available', timer: 0 },
-            { id: 2, type: 'washer', status: 'in-use', timer: 1800 },
-            { id: 3, type: 'washer', status: 'broken', timer: 0 },
-            { id: 4, type: 'washer', status: 'available', timer: 0 },
-            { id: 5, type: 'dryer', status: 'in-use', timer: 2700 },
-            { id: 6, type: 'dryer', status: 'available', timer: 0 },
-            { id: 7, type: 'dryer', status: 'finishing', timer: 240 },
-            { id: 8, type: 'dryer', status: 'available', timer: 0 },
-        ],
-    },
-    {
-        id: 'HuaxyacacHall',
-        name: 'Huaxyacac Hall',
-        machines: [
-            { id: 9, type: 'washer', status: 'available', timer: 0 },
-            { id: 10, type: 'washer', status: 'available', timer: 0 },
-            { id: 11, type: 'dryer', status: 'in-use', timer: 1200 },
-            { id: 12, type: 'dryer', status: 'broken', timer: 0 },
-        ],
-    },
-    {
-        id: 'ZuraHall',
-        name: 'Zura Hall',
-        machines: [
-            { id: 9, type: 'washer', status: 'available', timer: 0 },
-            { id: 10, type: 'washer', status: 'available', timer: 0 },
-            { id: 11, type: 'dryer', status: 'in-use', timer: 1200 },
-            { id: 12, type: 'dryer', status: 'broken', timer: 0 },
-        ],
-    },
-    ],
-};
-/*
-    CODE ABOVE WILL BE REPLACED WITH FIREBASE AUTHENTICATION
-*/
+// Machine card
+const MachineCard = ({ machine, onAction, onFix, isAdmin }: MachineCardProps) => {
+  const config = STATUS_CONFIG[machine.displayStatus];
+  const isBroken = machine.displayStatus === "broken";
 
-// Interact with a machine
-const MachineCard = ({ machine, onAction }: MachineCardProps) => {
-    const config = STATUS_CONFIG[machine.status];
-    // Disable action for broken machines
-    const isActionDisabled = machine.status === 'broken';
+  return (
+    <View style={styles.machineCard}>
+      <View
+        style={[
+          styles.machineStatusIndicator,
+          { backgroundColor: config.color },
+        ]}
+      />
+      <View style={styles.machineInfo}>
+        <Text style={styles.machineType}>
+          {machine.type.toUpperCase()} #{machine.id}
+        </Text>
+        <Text style={[styles.machineStatusText, { color: config.color }]}>
+          {config.text}
+        </Text>
 
-    // Render the machine card UI
-    return (
-        <View 
-            style={styles.machineCard}
+        {machine.reportMessage && isBroken && (
+          <Text style={{ color: "#F9FAFB", marginTop: 4, fontSize: 12 }}>
+            {machine.reportMessage}
+          </Text>
+        )}
+
+        {(machine.displayStatus === "in-use" ||
+          machine.displayStatus === "finishing") && (
+          <Text style={styles.machineTimer}>
+            {formatTime(machine.timer)}
+          </Text>
+        )}
+      </View>
+
+      <View style={{ marginTop: 12, marginLeft: 10 }}>
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            isBroken && styles.actionButtonDisabled,
+          ]}
+          onPress={() => onAction(machine)}
         >
-            <View 
-                style={[styles.machineStatusIndicator, { backgroundColor: config.color }, ]} 
-            />
-            <View 
-                style={styles.machineInfo}
-            >
-                <Text 
-                    // Display machine type and ID
-                    style={styles.machineType}
-                >
-                    {machine.type.toUpperCase()} #{machine.id}
-                </Text>
-                <Text 
-                    // Display machine status
-                    style={[styles.machineStatusText, { color: config.color }, ]}
-                >
-                    {config.text}
-                </Text>
-                { /* Display machine timer if in use or finishing */ }
-                {(machine.status === 'in-use' || machine.status === 'finishing') && (<Text style={styles.machineTimer}>{formatTime(machine.timer)}</Text>)}
-            </View>
+          <Text style={styles.actionButtonText}>
+            {machine.displayStatus === "available" ? "Start" : "Report"}
+          </Text>
+        </TouchableOpacity>
+
+        {isAdmin && isBroken && (
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              { backgroundColor: "#10B981", marginTop: 6 },
+            ]}
+            onPress={() => onFix(machine)}
+          >
+            <Text style={styles.actionButtonText}>Mark Fixed</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+};
+
+// Report modal
+const ReportModal = ({
+  visible,
+  onClose,
+  onSubmit,
+  machine,
+}: ReportModalProps) => {
+  const [reportMessage, setReportMessage] = useState("");
+
+  const handleSubmit = () => {
+    if (machine) {
+      onSubmit(machine, reportMessage);
+      setReportMessage("");
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalContainer}>
+          <Text style={styles.modalTitle}>
+            Report Machine #{machine?.id}
+          </Text>
+          <Text style={styles.modalSubtitle}>
+            Please describe the issue.
+          </Text>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="e.g., 'not spinning', 'won't turn on'"
+            placeholderTextColor="#9CA3AF"
+            multiline
+            value={reportMessage}
+            onChangeText={setReportMessage}
+          />
+          <View style={styles.modalActions}>
             <TouchableOpacity
-                style={[styles.actionButton, isActionDisabled && styles.actionButtonDisabled]}
-                onPress={() => onAction(machine)}
-                disabled={isActionDisabled}
+              style={[styles.modalButton, styles.modalButtonCancel]}
+              onPress={onClose}
             >
-                <Text 
-                    // Display action button text based on machine status
-                    style={styles.actionButtonText}
-                >
-                    {machine.status === 'available' ? 'Start' : 'Report'}
-                </Text>
+              <Text style={styles.modalButtonText}>Cancel</Text>
             </TouchableOpacity>
-        </View>
-    );
-};
-
-// Exercise a user report on a machine
-const ReportModal = ({ visible, onClose, onSubmit, machine }: ReportModalProps) => {
-    // Define state for the report message input and its setter function
-    const [reportMessage, setReportMessage] = useState('');
-
-    // Handle the submit action
-    const handleSubmit = () => {
-        if (machine) {
-            onSubmit(machine, reportMessage);  // Call the submit callback
-            setReportMessage('');  // Reset the text box
-            onClose();  // Close the modal
-        }
-    };
-
-    // Render the report modal UI
-    return (
-        <Modal
-            visible={visible}
-            transparent={true}
-            animationType="fade"
-        >
-            <View 
-                style={styles.modalBackdrop}
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonSubmit]}
+              onPress={handleSubmit}
             >
-                <View 
-                    style={styles.modalContainer}
-                >
-                    <Text 
-                        // Display the modal title with the machine ID
-                        style={styles.modalTitle}
-                    >
-                        Report Machine #{machine?.id}
-                    </Text>
-                    <Text 
-                        // Display the modal subtitle
-                        style={styles.modalSubtitle}
-                    >
-                        Please describe the issue.
-                    </Text>
-                    <TextInput
-                        // Input for the report message
-                        style={styles.modalInput}
-                        placeholder="e.g., 'not spinning', 'won't turn on'"
-                        placeholderTextColor="#9CA3AF"
-                        multiline
-                        value={reportMessage}
-                        onChangeText={setReportMessage}
-                    />
-                    <View 
-                        style={styles.modalActions}
-                    >
-                        <TouchableOpacity 
-                            style={[styles.modalButton, styles.modalButtonCancel]} 
-                            onPress={onClose}
-                        >
-                            <Text 
-                                // Display the cancel button text
-                                style={styles.modalButtonText}
-                            >
-                                Cancel
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.modalButton, styles.modalButtonSubmit]} 
-                            onPress={handleSubmit}
-                        >
-                            <Text 
-                                // Display the submit button text
-                                style={styles.modalButtonText}
-                            >
-                                Submit
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-        </Modal>
-    );
+              <Text style={styles.modalButtonText}>Submit</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 };
 
-
-// Define styles
+// styles (same as before, unchanged)
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#111827',
-    },
-    machinesGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'flex-start',
-        padding: 10,
-    },
-    machineCard: {
-        width: '46%',
-        backgroundColor: '#1F2937',
-        borderRadius: 12,
-        padding: 15,
-        margin: '2%',
-        position: 'relative',
-        overflow: 'hidden',
-    },
-    machineStatusIndicator: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        bottom: 0,
-        width: 6,
-    },
-    machineInfo: {
-        marginLeft: 10,
-        alignItems: 'flex-start',
-    },
-    machineType: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#FFF',
-    },
-    machineStatusText: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginTop: 4,
-    },
-    machineTimer: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#E5E7EB',
-        marginTop: 8,
-    },
-    actionButton: {
-        marginTop: 15,
-        backgroundColor: '#4F46E5',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        alignSelf: 'flex-start',
-        marginLeft: 10,
-    },
-    actionButtonDisabled: {
-        backgroundColor: '#4B5563',
-    },
-    actionButtonText: {
-        color: '#FFF',
-        fontWeight: '600',
-        fontSize: 14,
-    },
-    modalBackdrop: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalContainer: {
-        width: '90%',
-        backgroundColor: '#1F2937',
-        borderRadius: 12,
-        padding: 20,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#FFF',
-        textAlign: 'center',
-    },
-    modalSubtitle: {
-        fontSize: 14,
-        color: '#9CA3AF',
-        textAlign: 'center',
-        marginTop: 8,
-        marginBottom: 20,
-    },
-    modalInput: {
-        backgroundColor: '#374151',
-        borderRadius: 8,
-        color: '#FFF',
-        padding: 15,
-        height: 100,
-        textAlignVertical: 'top',
-        fontSize: 16,
-    },
-    modalActions: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 20,
-    },
-    modalButton: {
-        flex: 1,
-        padding: 12,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
-    modalButtonCancel: {
-        backgroundColor: '#4B5563',
-        marginRight: 10,
-    },
-    modalButtonSubmit: {
-        backgroundColor: '#4F46E5',
-    },
-    modalButtonText: {
-        color: '#FFF',
-        fontWeight: 'bold',
-    },
+  container: {
+    flex: 1,
+    backgroundColor: "#111827",
+  },
+  machinesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    padding: 10,
+  },
+  machineCard: {
+    width: "46%",
+    backgroundColor: "#1F2937",
+    borderRadius: 12,
+    padding: 15,
+    margin: "2%",
+    position: "relative",
+    overflow: "hidden",
+  },
+  machineStatusIndicator: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 6,
+  },
+  machineInfo: {
+    marginLeft: 10,
+    alignItems: "flex-start",
+  },
+  machineType: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#FFF",
+  },
+  machineStatusText: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  machineTimer: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#E5E7EB",
+    marginTop: 8,
+  },
+  actionButton: {
+    backgroundColor: "#4F46E5",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  actionButtonDisabled: {
+    backgroundColor: "#4B5563",
+  },
+  actionButtonText: {
+    color: "#FFF",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    width: "90%",
+    backgroundColor: "#1F2937",
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFF",
+    textAlign: "center",
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  modalInput: {
+    backgroundColor: "#374151",
+    borderRadius: 8,
+    color: "#FFF",
+    padding: 15,
+    height: 100,
+    textAlignVertical: "top",
+    fontSize: 16,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  modalButtonCancel: {
+    backgroundColor: "#4B5563",
+    marginRight: 10,
+  },
+  modalButtonSubmit: {
+    backgroundColor: "#4F46E5",
+  },
+  modalButtonText: {
+    color: "#FFF",
+    fontWeight: "bold",
+  },
 });
