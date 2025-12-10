@@ -27,7 +27,7 @@ export default function Buildings() {
         <View 
             style={{ flex: 1, padding: 16, }}
         >
-            <Text 
+            <Text
                 style={{ fontSize: 18, marginBottom: 12, }}
             >
                 Select a building
