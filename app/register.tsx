@@ -178,6 +178,10 @@ export default function Register() {
           secureTextEntry
           autoCapitalize="none"
           style={inputStyle}
+        <Image
+            // Display the app logo
+            source={require("../assets/images/Finallogo.png")}
+            style={{ width: 140, height: 140, marginBottom: 30, resizeMode: "contain", }}
         />
       </View>
 
