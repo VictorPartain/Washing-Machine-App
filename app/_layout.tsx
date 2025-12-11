@@ -3,6 +3,7 @@
 // In expo-router, files defined as "_layout" serve as layout wrappers for all nested screens under their directory.
 
 // Import necessary components and functions
+import React from "react";
 import { Stack, router, usePathname } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useState } from "react";
@@ -15,11 +16,15 @@ export default function RootLayout() {
     const path = usePathname();
     // Set ready state to false and define function setReady to update it
     const [ready, setReady] = useState(false);
+    // Track whether there is a logged-in user (true) or not (false)
+    const [hasUser, setHasUser] = useState(false);
 
     // Runs once the component is mounted (when layout is first loaded) and whenever the path changes
     useEffect(() => {
         // Called whenever the authentication state changes (log in / log out)
         const unsub = onAuthStateChanged(auth, (user) => {
+            // Update whether we currently have a logged in user
+            setHasUser(!!user);
             // Mark the app as ready once we have an auth state
             setReady(true);
             // Create a list of public routes that do not require authentication
@@ -50,7 +55,7 @@ export default function RootLayout() {
     if (!ready) {
         return null;
     }
- 
+
     // If the app is ready, render the stack navigator with our screens
     return (
         <Stack
@@ -58,28 +63,29 @@ export default function RootLayout() {
                 // Set header styles for all screens
                 headerStyle: { backgroundColor: "#0A0F1D" },
                 headerTintColor: "#fff",
-                // Add the sign out button to the header on all screens
-                headerRight: () => <SignOutButton/>,
+                // Add the sign out button to the header on all screens (only if logged in)
+                headerRight: () => (hasUser ? <SignOutButton /> : null),
             }}
         >
             {/* Define our screens */}
-            <Stack.Screen 
-                name="login" 
-                options={{ headerShown: false, }} 
+            <Stack.Screen
+                name="login"
+                options={{ headerShown: false }}
             />
-            <Stack.Screen 
-                name="register" 
-                options={{ headerShown: false, }} 
+            <Stack.Screen
+                name="register"
+                options={{ headerShown: false }}
             />
-            <Stack.Screen 
-                name="buildings/index" 
+            <Stack.Screen
+                name="buildings/index"
                 // The back button is not visible on the buildings screen
-                options={{ headerBackVisible: false, title: "Buildings", }} 
+                options={{ headerBackVisible: false, title: "Buildings" }}
             />
-            <Stack.Screen 
-                name="machines/[buildingId]" 
-                options={{ title: "Machines", }} 
+            <Stack.Screen
+                name="machines/[buildingId]"
+                options={{ title: "Machines" }}
             />
+
         </Stack>
     );
 }

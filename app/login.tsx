@@ -65,7 +65,7 @@ export default function Login() {
     >
         <Image 
             // Display the app logo
-            source={require("../assets/images/splash-icon.png")} 
+            source={require("../assets/images/Finallogo.png")}
             style={{ width: 140, height: 140, marginBottom: 30, resizeMode: "contain", }} 
         />
         <Text 

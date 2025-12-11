@@ -313,5 +313,5 @@ npx expo run:android
 
 # Start bundler
 npx expo start -c
-# Press "a" to open on Android
+# Press "a" to open on Android 
 ```

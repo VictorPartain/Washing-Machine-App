@@ -86,6 +86,28 @@ export default function Buildings() {
               name={item.name}
               image={item.image}
               onPress={() => router.push(`/machines/${item.id}` as Href)}
+        <View 
+            style={{ flex: 1, padding: 16, }}
+        >
+            <Text
+                style={{ fontSize: 18, marginBottom: 12, }}
+            >
+                Select a building
+            </Text>
+            <FlatList
+                // List all of the buildings
+                data={buildings}
+                keyExtractor={(b) => b.id}
+                ItemSeparatorComponent={() => <View style={{ height: 8, }} />}
+                renderItem={({ item }) => (
+                    <Button
+                        title={item.name}
+                        // Redirect the user to the machines screen for the selected building
+                        onPress={() =>
+                            router.push(`/machines/${item.id}` as Href)
+                        }
+                    />
+                )}
             />
           )}
         />

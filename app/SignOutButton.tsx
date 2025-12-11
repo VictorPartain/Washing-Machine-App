@@ -17,7 +17,7 @@ export default function SignOutButton() {
             router.replace("/login");
         } catch (e: any) {
             // Handle sign-out errors
-            Alert.alert("Logout failed", e?.message ?? "Try again.");
+            Alert.alert("Logout failed", e?.message ?? "Please try again.");
         } finally {
             // Ensure the user is redirected to the login screen
             router.replace("/login");
