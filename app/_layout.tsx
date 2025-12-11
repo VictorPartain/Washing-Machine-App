@@ -35,10 +35,17 @@ export default function RootLayout() {
             if (!user && !atPublic) {
               router.replace("/login");
             }
+
+
+
             // User is logged in, redirect them to the buildings screen
             else if (user && atPublic) {
               router.replace("/buildings");
             }
+
+
+
+
         });
         // Return the unsubscribe function to clean up the listener when the component unmounts or path changes
         return unsub;
@@ -54,7 +61,7 @@ export default function RootLayout() {
         <Stack
             screenOptions={{
                 // Set header styles for all screens
-                headerStyle: { backgroundColor: "#111827" },
+                headerStyle: { backgroundColor: "#0A0F1D" },
                 headerTintColor: "#fff",
                 // Add the sign out button to the header on all screens (only if logged in)
                 headerRight: () => (hasUser ? <SignOutButton /> : null),
