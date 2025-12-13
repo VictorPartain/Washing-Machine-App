@@ -148,6 +148,8 @@ Run the following commands one at a time to set up the necessary environment var
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Android\Sdk\cmdline-tools\latest\bin", "User")
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Android\Sdk\tools\bin", "User")
 
+Run the following commands one at a time to set up the necessary environment variables on your machine
+
 **MacOS (Terminal)**
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
@@ -342,4 +344,5 @@ npx expo run:android
 npx expo start -c
 # Press "a" to open on Android 
 ```
+
 
