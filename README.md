@@ -18,11 +18,6 @@ A **React Native** app built with **Expo** and **expo-router**, targeting **Andr
 
 ---
 
-## DISCLAIMER
-
-These steps are NOT currently enough to get this project running. Do to the nature of the program stack used, this project requires extensive, device-specific setup. Please reach out to either System 32 or Victorstone on discord to get the project up and running on your machine.
-
----
 ## 💻 Requirements
 
 > You only need **Android Studio installed** to start. Follow OS-specific setup steps below.
@@ -138,6 +133,38 @@ node -e "const g=require('./android/app/google-services.json'); console.log(g.cl
 ```
 
 If it doesn’t print `com.company.laundry`, request the correct file.
+
+---
+
+### Set Environment Variables
+
+Run the following commands one at a time to set up the necessary environment variables on your machine
+
+**Windows (PowerShell)** 
+[Environment]::SetEnvironmentVariable("ANDROID_HOME", "$env:LOCALAPPDATA\Android\Sdk", "User")
+[Environment]::SetEnvironmentVariable("ANDROID_SDK_ROOT", "$env:LOCALAPPDATA\Android\Sdk", "User")
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Android\Sdk\platform-tools", "User")
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Android\Sdk\emulator", "User")
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Android\Sdk\cmdline-tools\latest\bin", "User")
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:LOCALAPPDATA\Android\Sdk\tools\bin", "User")
+
+**MacOS (Terminal)**
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export PATH="$PATH:$ANDROID_HOME/platform-tools"
+export PATH="$PATH:$ANDROID_HOME/emulator"
+export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+export PATH="$PATH:$ANDROID_HOME/tools/bin"
+
+---
+
+### Add the Gradle Module
+
+1. Open the project in Android Studio
+2. Proceed to the menu in the top left: File --> New --> Import Module
+3. Within the left side of the text box click on the folder logo
+4. Browse to and select the build.gradle file within the android folder in the main project directory
+5. Select Finish
 
 ---
 
@@ -315,3 +342,4 @@ npx expo run:android
 npx expo start -c
 # Press "a" to open on Android 
 ```
+
